@@ -33,7 +33,7 @@ jobs:
         uses: https://data.forgejo.org/actions/checkout@v4
         with:
           submodules: recursive
-          token: ${{ secrets.SUBMODULE_TOKEN }}
+          token: ${{ secrets.FORGEJO_TOKEN }}
 
       - name: Login no registro
         run: |
@@ -70,11 +70,7 @@ jobs:
       - name: Build — peerjs-server
         run: |
           IMAGE="forgejo.pi.xvr/${{ steps.tag.outputs.owner }}/peerjs-server:${{ steps.tag.outputs.branch }}"
-          docker build --pull \          echo '  __  __    ___  __  __ ___  __   __'
-          echo '  \ \/ /   /   \\ \/ //   \ \ \ / /'
-          echo '   \  /   | X | \  /| X X | \ V / '
-          echo '   /  \   |   | /  \|  V  |  | |  '
-          echo '  /_/\_\   \___//_/\_\\_| |/  |_|  '
+          docker build --pull \
             --build-arg SKIP_TESTS=true \
             -t "$IMAGE" \
             ./services/peerjs-server
