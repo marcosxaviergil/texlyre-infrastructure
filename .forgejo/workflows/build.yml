@@ -1,0 +1,111 @@
+name: Build & Push
+
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  build:
+    runs-on: docker
+    container:
+      image: forgejo.pi.xvr/marcosxavier/imagem-docker:stable
+      volumes:
+        - /root/.docker:/root/.docker
+
+    steps:
+      - name: Banner
+        run: |
+          echo '================================================================='
+          echo '  __  __    ___     _____ _____ ____  '
+          echo '  \ \/ /   / \ \   / /_ _| ____|  _ \ '
+          echo '   \  /   / _ \ \ / / | ||  _| | |_) |'
+          echo '   /  \  / ___ \ V /  | || |___|  _ < '
+          echo '  /_/\_\/_/   \_\_/  |___|_____|_| \_\'
+          echo '  texlyre-infrastructure — Xavier Homelab'
+          echo '  Homelab  : Cluster com Orange Pi Zero 3'
+          echo '  Tailnet  : *.pi.xvr'
+          echo '  Responsavel  : Marcos Xavier Gil Junior'
+          echo '  Registro     : forgejo.pi.xvr'
+          echo '================================================================='
+
+      - name: Checkout (com submodules)
+        uses: https://data.forgejo.org/actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SUBMODULE_TOKEN }}
+
+      - name: Login no registro
+        run: |
+          echo "${{ secrets.REGISTRY_TOKEN }}" | docker login forgejo.pi.xvr \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Definir tag
+        id: tag
+        run: |
+          BRANCH=$(echo "${{ github.ref_name }}" \
+            | sed 's/[^a-zA-Z0-9._-]/-/g' \
+            | tr '[:upper:]' '[:lower:]')
+          echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "owner=${OWNER}" >> $GITHUB_OUTPUT
+
+      - name: Build — frontend
+        run: |
+          IMAGE="forgejo.pi.xvr/${{ steps.tag.outputs.owner }}/texlyre:${{ steps.tag.outputs.branch }}"
+          docker build --pull \
+            -f frontend/Dockerfile \
+            -t "$IMAGE" \
+            .
+          docker push "$IMAGE"
+
+      - name: Build — y-webrtc-server
+        run: |
+          IMAGE="forgejo.pi.xvr/${{ steps.tag.outputs.owner }}/y-webrtc-server:${{ steps.tag.outputs.branch }}"
+          docker build --pull \
+            -t "$IMAGE" \
+            ./services/y-webrtc-server
+          docker push "$IMAGE"
+
+      - name: Build — peerjs-server
+        run: |
+          IMAGE="forgejo.pi.xvr/${{ steps.tag.outputs.owner }}/peerjs-server:${{ steps.tag.outputs.branch }}"
+          docker build --pull \          echo '  __  __    ___  __  __ ___  __   __'
+          echo '  \ \/ /   /   \\ \/ //   \ \ \ / /'
+          echo '   \  /   | X | \  /| X X | \ V / '
+          echo '   /  \   |   | /  \|  V  |  | |  '
+          echo '  /_/\_\   \___//_/\_\\_| |/  |_|  '
+            --build-arg SKIP_TESTS=true \
+            -t "$IMAGE" \
+            ./services/peerjs-server
+          docker push "$IMAGE"
+
+      - name: Build — texlive-ondemand-server
+        run: |
+          IMAGE="forgejo.pi.xvr/${{ steps.tag.outputs.owner }}/texlive-ondemand-server:${{ steps.tag.outputs.branch }}"
+          docker build --pull \
+            -t "$IMAGE" \
+            ./services/texlive-ondemand-server
+          docker push "$IMAGE"
+
+      - name: Build — filepizza-server
+        run: |
+          IMAGE="forgejo.pi.xvr/${{ steps.tag.outputs.owner }}/filepizza-server:${{ steps.tag.outputs.branch }}"
+          docker build --pull \
+            -t "$IMAGE" \
+            ./services/filepizza-server
+          docker push "$IMAGE"
+
+      - name: Deploy via Portainer
+        run: |
+          curl -fSs --max-time 30 \
+            -X POST "https://porta.pi.xvr/api/webhooks/${{ vars.PORTAINER_WEBHOOK_ID }}"
+
+      - name: Prune & Banner
+        if: always()
+        run: |
+          docker system prune -af
+          echo '================================================================='
+          echo '  Homelab  : Cluster com Orange Pi Zero 3'
+          echo '  Registro : forgejo.pi.xvr'
+          echo '================================================================='
