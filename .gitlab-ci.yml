@@ -1,0 +1,110 @@
+image: registry.setic.ufsc.br/marcosxavier/docker-image/docker:stable
+
+stages:
+  - build
+  - deploy
+  - cleanup
+
+variables:
+  DOCKER_BUILDKIT: "1"
+  GIT_SUBMODULE_STRATEGY: recursive
+  GIT_SUBMODULE_FORCE_HTTPS: "true"
+
+.docker_job: &docker_job
+  image: registry.setic.ufsc.br/marcosxavier/docker-image/docker:stable
+  before_script:
+    - docker info
+
+.banner: &banner |
+    - |
+      echo ""
+      echo "  ███████╗███████╗████████╗██╗╔██████╗ "
+      echo "  ██╔════╝██╔════╝╚══██╔══╝██║║██╔═══╝"
+      echo "  ███████╗█████╗     ██║   ██║║██║"
+      echo "  ╚════██║██╔══╝     ██║   ██║║██║"
+      echo "  ███████║███████╗   ██║   ██║║██████╗"
+      echo "  ╚══════╝╚══════╝   ╚═╝   ╚═╝╚══════╝ "
+      echo "               s e t i c              "
+      echo "  Superintendência de Tecnologia da Informação e Comunicação"
+      echo "================================================================="
+      echo "Créditos:"
+      echo " - Responsável          : Marcos Xavier Gil Júnior"
+      echo " - Documentação         : https://docs.ufsc.br/books/servicos/chapter/eventos-ufsc"
+      echo "================================================================="
+
+build:
+  <<: *docker_job
+  stage: build
+  only:
+    - branches
+  script:
+    - *banner
+    - |
+      BRANCH=$(echo "$CI_COMMIT_REF_NAME" \
+        | sed 's/[^a-zA-Z0-9._-]/-/g' \
+        | tr '[:upper:]' '[:lower:]')
+      OWNER=$(echo "$FORGEJO_OWNER" | tr '[:upper:]' '[:lower:]')
+
+      echo "$FORGEJO_REGISTRY_TOKEN" | docker login forgejo.pi.xvr \
+        -u "$FORGEJO_REGISTRY_USER" --password-stdin
+
+      # frontend
+      docker build --pull \
+        -f frontend/Dockerfile \
+        -t "forgejo.pi.xvr/${OWNER}/texlyre:${BRANCH}" \
+        .
+      docker push "forgejo.pi.xvr/${OWNER}/texlyre:${BRANCH}"
+
+      # y-webrtc-server
+      docker build --pull \
+        -t "forgejo.pi.xvr/${OWNER}/y-webrtc-server:${BRANCH}" \
+        ./services/y-webrtc-server
+      docker push "forgejo.pi.xvr/${OWNER}/y-webrtc-server:${BRANCH}"
+
+      # peerjs-server
+      docker build --pull \
+        --build-arg SKIP_TESTS=true \
+        -t "forgejo.pi.xvr/${OWNER}/peerjs-server:${BRANCH}" \
+        ./services/peerjs-server
+      docker push "forgejo.pi.xvr/${OWNER}/peerjs-server:${BRANCH}"
+
+      # texlive-ondemand-server
+      docker build --pull \
+        -t "forgejo.pi.xvr/${OWNER}/texlive-ondemand-server:${BRANCH}" \
+        ./services/texlive-ondemand-server
+      docker push "forgejo.pi.xvr/${OWNER}/texlive-ondemand-server:${BRANCH}"
+
+      # filepizza-server
+      docker build --pull \
+        -t "forgejo.pi.xvr/${OWNER}/filepizza-server:${BRANCH}" \
+        ./services/filepizza-server
+      docker push "forgejo.pi.xvr/${OWNER}/filepizza-server:${BRANCH}"
+  tags:
+    - docker
+
+deploy:
+  stage: deploy
+  only:
+    - branches
+  needs: ["build"]
+  variables:
+    GIT_CHECKOUT: "false"
+  script:
+    - *banner
+    - |
+      curl -fSs --max-time 30 \
+        -X POST "${PORTAINER_WEBHOOK_URL}"
+  tags:
+    - docker
+
+cleanup:
+  <<: *docker_job
+  stage: cleanup
+  only:
+    - branches
+  when: always
+  script:
+    - *banner
+    - docker system prune -af
+  tags:
+    - docker
